@@ -26,7 +26,7 @@
 ;;
 ;;; Code:
 
-(require 'netrc)
+(require 'auth-source)
 (require 'url-parse)
 (require 'bug-rpc)
 (require 'bug-common-functions)
@@ -42,20 +42,26 @@ The return value is a two element list (login password)
   (let* ((url (url-generic-parse-url (bug--instance-property :url instance)))
          (host (url-host url))
          (port (prin1-to-string (url-port url)))
-         (authinfo-file (expand-file-name
-                     (if (bug--instance-property :authinfo instance)
-                         (bug--instance-property :authinfo instance) "~/.authinfo")))
-         (authinfo (netrc-parse authinfo-file))
-         (authrecord (netrc-machine authinfo host port))
+         (auth-sources (if (bug--instance-property :authinfo instance)
+                           (bug--instance-property :authinfo instance) "~/.authinfo"))
          (login (if (bug--instance-property :login instance)
-                    (bug--instance-property :login instance)
-                  (netrc-get authrecord "login")))
-         (password (if (bug--instance-property :password instance)
-                       (bug--instance-property :password instance)
-                     (netrc-get authrecord "password"))))
-    (unless (file-exists-p authinfo-file)
-      (error (format "Authinfo file in '%s' does not exist." authinfo-file)))
-    (list login password)))
+                    (bug--instance-property :login instance)))
+         (auth-info (car
+                     (if login
+                         (auth-source-search
+                          :host host
+                          :user login
+                          :max 1
+                          :require '(:user :secret)
+                          :create nil)
+                       (auth-source-search
+                        :host host
+                        :max 1
+                        :require '(:user :secret)
+                        :create nil))))
+         (user (plist-get auth-info :user))
+         (password (auth-info-password auth-info)))
+    (list user password)))
 
 ;;;###autoload
 (defun bug-logout (&optional instance)
